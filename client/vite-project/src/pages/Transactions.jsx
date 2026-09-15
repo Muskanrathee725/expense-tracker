@@ -1,23 +1,33 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { useOutletContext } from 'react-router-dom';
-import { deleteTransaction, getFinanceData } from '../lib/financeStore';
+import { deleteTransactionApi, listTransactions } from '../lib/api';
 
 const Transactions = () => {
   const outlet = useOutletContext();
   const theme = outlet?.theme || 'sky';
   const isSky = theme === 'sky';
-  const [transactions, setTransactions] = useState(() => getFinanceData().transactions);
+  const [transactions, setTransactions] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const refresh = async () => {
+    try {
+      setTransactions(await listTransactions());
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const sync = () => setTransactions(getFinanceData().transactions);
-    window.addEventListener('finance-data-updated', sync);
-    return () => window.removeEventListener('finance-data-updated', sync);
+    refresh();
   }, []);
 
-  const handleDelete = (tx) => {
+  const handleDelete = async (tx) => {
     if (!window.confirm(`Delete "${tx.title}" transaction?`)) return;
-    deleteTransaction(tx.id);
+    await deleteTransactionApi(tx.id);
+    await refresh();
   };
 
   return (
@@ -29,7 +39,12 @@ const Transactions = () => {
 
       <section className={`rounded-3xl border p-7 shadow-sm ${isSky ? 'border-sky-200 bg-white/90' : 'border-sky-800/40 bg-slate-900/70'}`}>
         <div className="space-y-4">
-          {transactions.length === 0 && (
+          {loading && (
+            <div className={`rounded-2xl border border-dashed p-8 text-center ${isSky ? 'border-sky-200 bg-sky-50/50 text-slate-500' : 'border-sky-800/40 bg-slate-900/40 text-slate-300'}`}>
+              Loading...
+            </div>
+          )}
+          {!loading && transactions.length === 0 && (
             <div className={`rounded-2xl border border-dashed p-8 text-center ${isSky ? 'border-sky-200 bg-sky-50/50 text-slate-500' : 'border-sky-800/40 bg-slate-900/40 text-slate-300'}`}>
               No transactions found.
             </div>

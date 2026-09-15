@@ -1,20 +1,22 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import { useOutletContext } from 'react-router-dom';
+import { parseFinancePrompt } from '../lib/financeStore';
 import {
-  addTransaction,
-  deleteTransaction,
-  getFinanceData,
-  parseFinancePrompt,
-  resetAllFinanceData,
-  resetTransactionsForMonth,
-} from '../lib/financeStore';
+  createTransaction,
+  deleteTransactionApi,
+  listBudgets,
+  listTransactions,
+  resetAllApi,
+  resetMonthApi,
+} from '../lib/api';
 
 const Dashboard = () => {
   const outlet = useOutletContext();
   const theme = outlet?.theme || 'sky';
   const isSky = theme === 'sky';
-  const [financeData, setFinanceData] = useState(() => getFinanceData());
+  const [financeData, setFinanceData] = useState({ budgets: {}, transactions: [] });
+  const [loading, setLoading] = useState(true);
   const [prompt, setPrompt] = useState('');
   const [selectedMonth, setSelectedMonth] = useState(() => new Date().toISOString().slice(0, 7));
   const [assistantMsg, setAssistantMsg] = useState('Try: "spent 650 on food" or "received 35000 salary".');
@@ -23,10 +25,22 @@ const Dashboard = () => {
   const [customCategory, setCustomCategory] = useState('');
   const [manualAmount, setManualAmount] = useState('');
 
+  const refresh = async () => {
+    try {
+      const [transactions, budgets] = await Promise.all([listTransactions(), listBudgets()]);
+      setFinanceData({
+        transactions,
+        budgets: Object.fromEntries(budgets.map((b) => [b.name, b.amount])),
+      });
+    } catch (err) {
+      setAssistantMsg(err.response?.data?.message || 'Failed to load your data.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const sync = () => setFinanceData(getFinanceData());
-    window.addEventListener('finance-data-updated', sync);
-    return () => window.removeEventListener('finance-data-updated', sync);
+    refresh();
   }, []);
 
   const summaryCards = useMemo(() => {
@@ -64,7 +78,7 @@ const Dashboard = () => {
     return `${selectedMonth}-${day}`;
   };
 
-  const handleAiLog = (e) => {
+  const handleAiLog = async (e) => {
     e.preventDefault();
     if (!prompt.trim()) return;
     const parsed = parseFinancePrompt(prompt);
@@ -72,13 +86,17 @@ const Dashboard = () => {
       setAssistantMsg(parsed.message);
       return;
     }
-    const entryDate = getEntryDate();
-    const entry = addTransaction({ ...parsed.entry, date: entryDate });
-    setAssistantMsg(`Logged: ${entry.type === 'income' ? '+' : '-'}Rs ${entry.amount} under ${entry.category}.`);
-    setPrompt('');
+    try {
+      const entry = await createTransaction({ ...parsed.entry, date: getEntryDate() });
+      await refresh();
+      setAssistantMsg(`Logged: ${entry.type === 'income' ? '+' : '-'}Rs ${entry.amount} under ${entry.category}.`);
+      setPrompt('');
+    } catch (err) {
+      setAssistantMsg(err.response?.data?.message || 'Failed to log that transaction.');
+    }
   };
 
-  const handleManualLog = (e) => {
+  const handleManualLog = async (e) => {
     e.preventDefault();
     const amount = Number(manualAmount);
     if (!amount || amount <= 0) {
@@ -92,35 +110,42 @@ const Dashboard = () => {
       return;
     }
 
-    const entry = addTransaction({
-      title: manualType === 'income' ? `${chosenCategory} Credit` : `${chosenCategory} Expense`,
-      amount,
-      type: manualType,
-      category: chosenCategory,
-      date: getEntryDate(),
-    });
-
-    setAssistantMsg(`Manually logged: ${entry.type === 'income' ? '+' : '-'}Rs ${entry.amount} in ${entry.category}.`);
-    setManualAmount('');
-    setCustomCategory('');
-    if (manualCategory === '__new__') setManualCategory(chosenCategory);
+    try {
+      const entry = await createTransaction({
+        title: manualType === 'income' ? `${chosenCategory} Credit` : `${chosenCategory} Expense`,
+        amount,
+        type: manualType,
+        category: chosenCategory,
+        date: getEntryDate(),
+      });
+      await refresh();
+      setAssistantMsg(`Manually logged: ${entry.type === 'income' ? '+' : '-'}Rs ${entry.amount} in ${entry.category}.`);
+      setManualAmount('');
+      setCustomCategory('');
+      if (manualCategory === '__new__') setManualCategory(chosenCategory);
+    } catch (err) {
+      setAssistantMsg(err.response?.data?.message || 'Failed to log that transaction.');
+    }
   };
 
-  const handleResetMonth = () => {
+  const handleResetMonth = async () => {
     if (!window.confirm(`Reset all logs for ${selectedMonth}?`)) return;
-    resetTransactionsForMonth(selectedMonth);
+    await resetMonthApi(selectedMonth);
+    await refresh();
     setAssistantMsg(`Reset done for month ${selectedMonth}.`);
   };
 
-  const handleResetAll = () => {
+  const handleResetAll = async () => {
     if (!window.confirm('Reset all finance data? This cannot be undone.')) return;
-    resetAllFinanceData();
+    await resetAllApi();
+    await refresh();
     setAssistantMsg('All finance data has been reset.');
   };
 
-  const handleDelete = (tx) => {
+  const handleDelete = async (tx) => {
     if (!window.confirm(`Delete "${tx.title}" transaction?`)) return;
-    deleteTransaction(tx.id);
+    await deleteTransactionApi(tx.id);
+    await refresh();
     setAssistantMsg(`Deleted transaction: ${tx.title}`);
   };
 
@@ -255,7 +280,12 @@ const Dashboard = () => {
       <section className={`mt-7 rounded-3xl border p-7 shadow-sm ${isSky ? 'border-sky-200 bg-white/90' : 'border-sky-800/40 bg-slate-900/70'}`}>
         <h3 className={`mb-6 text-4xl font-extrabold ${isSky ? 'text-slate-900' : 'text-slate-100'}`}>Recent Transactions</h3>
         <div className="space-y-4">
-          {recentTransactions.length === 0 && (
+          {loading && (
+            <div className={`rounded-2xl border border-dashed p-8 text-center ${isSky ? 'border-sky-200 bg-sky-50/50 text-slate-500' : 'border-sky-800/40 bg-slate-900/40 text-slate-300'}`}>
+              Loading...
+            </div>
+          )}
+          {!loading && recentTransactions.length === 0 && (
             <div className={`rounded-2xl border border-dashed p-8 text-center ${isSky ? 'border-sky-200 bg-sky-50/50 text-slate-500' : 'border-sky-800/40 bg-slate-900/40 text-slate-300'}`}>
               No transactions yet. Use AI logger to add one.
             </div>

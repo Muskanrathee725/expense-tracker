@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import { useOutletContext } from 'react-router-dom';
-import { getFinanceData, setBudgetForCategory } from '../lib/financeStore';
+import { listBudgets, listTransactions, upsertBudget } from '../lib/api';
 import {
   Bar,
   BarChart,
@@ -22,17 +22,27 @@ const Expenses = () => {
   const outlet = useOutletContext();
   const theme = outlet?.theme || 'sky';
   const isSky = theme === 'sky';
-  const [financeData, setFinanceData] = useState(() => getFinanceData());
+  const [financeData, setFinanceData] = useState({ budgets: {}, transactions: [] });
   const [plannerCategory, setPlannerCategory] = useState('Food');
   const [plannerPercent, setPlannerPercent] = useState('');
   const [customCategory, setCustomCategory] = useState('');
   const [plannerMsg, setPlannerMsg] = useState('');
   const [rangeMode, setRangeMode] = useState('monthly');
 
+  const refresh = async () => {
+    try {
+      const [transactions, budgets] = await Promise.all([listTransactions(), listBudgets()]);
+      setFinanceData({
+        transactions,
+        budgets: Object.fromEntries(budgets.map((b) => [b.name, b.amount])),
+      });
+    } catch (err) {
+      setPlannerMsg(err.response?.data?.message || 'Failed to load your data.');
+    }
+  };
+
   useEffect(() => {
-    const sync = () => setFinanceData(getFinanceData());
-    window.addEventListener('finance-data-updated', sync);
-    return () => window.removeEventListener('finance-data-updated', sync);
+    refresh();
   }, []);
 
   const expenseRows = useMemo(() => {
@@ -150,7 +160,7 @@ const Expenses = () => {
     [expenseRows],
   );
 
-  const handleApplyPercentage = (e) => {
+  const handleApplyPercentage = async (e) => {
     e.preventDefault();
     const percent = Number(plannerPercent);
     if (!percent || percent <= 0 || percent > 100) {
@@ -169,13 +179,18 @@ const Expenses = () => {
     }
 
     const budgetAmount = Math.round((totalMoney * percent) / 100);
-    setBudgetForCategory(chosen, budgetAmount);
-    setPlannerMsg(`Budget set: ${chosen} = ${percent}% of total money (Rs ${budgetAmount.toLocaleString()}).`);
-    if (plannerCategory === '__new__') {
-      setPlannerCategory(chosen);
-      setCustomCategory('');
+    try {
+      await upsertBudget(chosen, budgetAmount);
+      await refresh();
+      setPlannerMsg(`Budget set: ${chosen} = ${percent}% of total money (Rs ${budgetAmount.toLocaleString()}).`);
+      if (plannerCategory === '__new__') {
+        setPlannerCategory(chosen);
+        setCustomCategory('');
+      }
+      setPlannerPercent('');
+    } catch (err) {
+      setPlannerMsg(err.response?.data?.message || 'Failed to set budget.');
     }
-    setPlannerPercent('');
   };
 
   return (

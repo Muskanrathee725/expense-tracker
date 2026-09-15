@@ -18,7 +18,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { getFinanceData } from '../lib/financeStore';
+import { listTransactions } from '../lib/api';
 
 const monthLabels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const weekLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -28,13 +28,13 @@ const Analytics = () => {
   const outlet = useOutletContext();
   const theme = outlet?.theme || 'sky';
   const isSky = theme === 'sky';
-  const [financeData, setFinanceData] = useState(() => getFinanceData());
+  const [financeData, setFinanceData] = useState({ transactions: [] });
   const [windowMonths, setWindowMonths] = useState(12);
 
   useEffect(() => {
-    const sync = () => setFinanceData(getFinanceData());
-    window.addEventListener('finance-data-updated', sync);
-    return () => window.removeEventListener('finance-data-updated', sync);
+    listTransactions()
+      .then((transactions) => setFinanceData({ transactions }))
+      .catch((err) => console.error(err));
   }, []);
 
   const availableYears = useMemo(() => {

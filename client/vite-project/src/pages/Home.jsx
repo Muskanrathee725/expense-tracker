@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import Modal from 'react-modal';
+import { loginUser, registerUser } from '../lib/api';
 
 Modal.setAppElement('#root');
 
@@ -39,21 +40,41 @@ const Home = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [username, setUsername] = useState('');
+  const [authError, setAuthError] = useState('');
+  const [authLoading, setAuthLoading] = useState(false);
 
   useEffect(() => {
     localStorage.setItem('expanse_theme', theme);
   }, [theme]);
 
-  const handleLogin = (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
-    localStorage.setItem('token', 'dummy-token-123');
-    window.location.href = '/dashboard';
+    setAuthError('');
+    setAuthLoading(true);
+    try {
+      const data = await loginUser(email, password);
+      localStorage.setItem('token', data.token);
+      window.location.href = '/dashboard';
+    } catch (err) {
+      setAuthError(err.response?.data?.message || 'Login failed');
+    } finally {
+      setAuthLoading(false);
+    }
   };
 
-  const handleRegister = (e) => {
+  const handleRegister = async (e) => {
     e.preventDefault();
-    localStorage.setItem('token', 'dummy-token-123');
-    window.location.href = '/dashboard';
+    setAuthError('');
+    setAuthLoading(true);
+    try {
+      const data = await registerUser(username, email, password);
+      localStorage.setItem('token', data.token);
+      window.location.href = '/dashboard';
+    } catch (err) {
+      setAuthError(err.response?.data?.message || 'Registration failed');
+    } finally {
+      setAuthLoading(false);
+    }
   };
 
   return (
@@ -248,7 +269,7 @@ const Home = () => {
 
       <Modal
         isOpen={isLoginOpen}
-        onRequestClose={() => setIsLoginOpen(false)}
+        onRequestClose={() => { setIsLoginOpen(false); setAuthError(''); }}
         className={`mx-auto mt-20 w-[92%] max-w-md rounded-3xl border p-8 outline-none ${isSky ? 'border-sky-200 bg-gradient-to-b from-white to-sky-50' : 'border-sky-800 bg-gradient-to-b from-slate-900 to-slate-900/80 text-slate-100'}`}
         overlayClassName={`fixed inset-0 z-50 backdrop-blur-sm ${isSky ? 'bg-slate-900/40' : 'bg-black/60'}`}
       >
@@ -270,15 +291,19 @@ const Home = () => {
             className="w-full rounded-xl border border-sky-200 px-4 py-3 text-lg outline-none ring-sky-300 focus:ring"
             required
           />
-          <button className="w-full rounded-xl bg-sky-700 py-3 text-lg font-semibold text-white hover:bg-sky-800">
-            Login
+          {authError && <p className="text-sm font-semibold text-rose-600">{authError}</p>}
+          <button
+            disabled={authLoading}
+            className="w-full rounded-xl bg-sky-700 py-3 text-lg font-semibold text-white hover:bg-sky-800 disabled:opacity-60"
+          >
+            {authLoading ? 'Logging in...' : 'Login'}
           </button>
         </form>
       </Modal>
 
       <Modal
         isOpen={isRegisterOpen}
-        onRequestClose={() => setIsRegisterOpen(false)}
+        onRequestClose={() => { setIsRegisterOpen(false); setAuthError(''); }}
         className={`mx-auto mt-16 w-[92%] max-w-md rounded-3xl border p-8 outline-none ${isSky ? 'border-sky-200 bg-gradient-to-b from-white to-sky-50' : 'border-sky-800 bg-gradient-to-b from-slate-900 to-slate-900/80 text-slate-100'}`}
         overlayClassName={`fixed inset-0 z-50 backdrop-blur-sm ${isSky ? 'bg-slate-900/40' : 'bg-black/60'}`}
       >
@@ -308,8 +333,12 @@ const Home = () => {
             className="w-full rounded-xl border border-sky-200 px-4 py-3 text-lg outline-none ring-sky-300 focus:ring"
             required
           />
-          <button className="w-full rounded-xl bg-sky-700 py-3 text-lg font-semibold text-white hover:bg-sky-800">
-            Register
+          {authError && <p className="text-sm font-semibold text-rose-600">{authError}</p>}
+          <button
+            disabled={authLoading}
+            className="w-full rounded-xl bg-sky-700 py-3 text-lg font-semibold text-white hover:bg-sky-800 disabled:opacity-60"
+          >
+            {authLoading ? 'Creating account...' : 'Register'}
           </button>
         </form>
       </Modal>
